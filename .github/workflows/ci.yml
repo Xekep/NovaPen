@@ -758,18 +758,21 @@ jobs:
       - name: Install Linux CAS CLI and Native AOT build dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xcas clang zlib1g-dev
-      - name: Cache pinned official Windows CAS archive
+      - name: Cache Windows CAS built from pinned sources
         if: runner.os == 'Windows'
         uses: actions/cache@v4
         with:
-          path: .artifacts/giac-test/xcaswininst.exe
-          key: windows-cas-archive-2811493b3caf207614ebcb6d0fab46fa76c3c7938c064076d1ebb96cc389514f
-      - name: Extract verified official Windows CLI without running its installer
+          path: |
+            .artifacts/giac-runtime/win-x64
+            .artifacts/installers/NovaPen-Giac-corresponding-sources-*.tar.gz
+            .artifacts/installers/NovaPen-Giac-corresponding-sources-*.tar.gz.sha256
+          key: giac-win-x64-${{ hashFiles('tools/prepare-giac-runtime.ps1', 'tools/giac-native/Makefile', 'tools/giac-native/build.sh', 'tools/giac-native/icas.cpp', 'tools/giac-native/test-transport.ps1') }}
+      - name: Verify the Windows CLI used by the application
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $exe = ./tools/fetch-giac-test-runtime.ps1
-          "BLURMASK_TEST_GIAC=$exe" >> $env:GITHUB_ENV
+          ./tools/prepare-giac-runtime.ps1 -OutputDirectory .artifacts/giac-runtime/win-x64 -SourcesDirectory .artifacts/installers | Out-Host
+          "BLURMASK_TEST_GIAC=$((Resolve-Path '.artifacts/giac-runtime/win-x64/icas.exe').Path)" >> $env:GITHUB_ENV
       - name: Locate Linux CLI
         if: runner.os == 'Linux'
         run: echo "BLURMASK_TEST_GIAC=$(command -v icas)" >> "$GITHUB_ENV"

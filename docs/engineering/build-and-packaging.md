@@ -32,15 +32,17 @@ with this option (zero warnings/errors), along with server publication,
 34 headless mask checks and the text/math/raw-content probes on both runtime
 10 and explicitly selected runtime `11.0.0`.
 
-Windows x64 Native AOT publication also passed. Its isolated smoke test still
-exits 1 at `Desktop pointer resize handle did not transform the stroke`, the
-previously recorded UI failure. The two existing Avalonia DirectComposition
-non-blittable Boolean diagnostics remain. Server invitation tests passed;
-four JavaScript landing-page tests fail on unchanged page/test files
-(`localStorage` assertion and missing `document.querySelector` in the mock).
-Docker builds, PostgreSQL integration and Linux/macOS execution were not run
-locally for this migration. Logs and the native build are under
-`.artifacts/net11-stable-*`.
+Windows x64 Native AOT publication also passed. That migration checkpoint's
+smoke and landing-page failures are preserved in `.artifacts/net11-stable-*`.
+RC2 fixes the synthetic resize gesture by converting DIPs through the platform's
+`PointToScreen` mapping before sending native client pixels. The fading test
+also yields to the actual background timer within a bounded wait. The full
+Managed and packaged Native AOT smoke tests now pass locally. Nine invitation /
+landing checks pass, including language-only storage and invitation privacy.
+The packaged native math/layout/AUTO/AI-pen/solver checks also pass; evidence is
+under `.artifacts/rc2-*`. The two existing Avalonia DirectComposition non-blittable
+Boolean diagnostics remain. Docker and PostgreSQL integration are verified by
+CI rather than the local Windows run.
 
 ### Windows x64 Native AOT
 
