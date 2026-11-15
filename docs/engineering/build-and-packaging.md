@@ -37,12 +37,40 @@ smoke and landing-page failures are preserved in `.artifacts/net11-stable-*`.
 RC2 fixes the synthetic resize gesture by converting DIPs through the platform's
 `PointToScreen` mapping before sending native client pixels. The fading test
 also yields to the actual background timer within a bounded wait. The full
-Managed and packaged Native AOT smoke tests now pass locally. Nine invitation /
+Managed and packaged Native AOT smoke tests passed locally, but did not cover
+absolute cursor/ink alignment on additional monitors; RC2 was withdrawn.
+Nine invitation /
 landing checks pass, including language-only storage and invitation privacy.
 The packaged native math/layout/AUTO/AI-pen/solver checks also pass; evidence is
 under `.artifacts/rc2-*`. The two existing Avalonia DirectComposition non-blittable
 Boolean diagnostics remain. Docker and PostgreSQL integration are verified by
 CI rather than the local Windows run.
+
+The Windows desktop layer now synchronizes Avalonia's cached presentation DPI
+after positioning each overlay. Avalonia12.1.2's native Position setter can update
+its input scale without notifying the managed top level. A missing notification
+is replayed through `WM_DPICHANGED` on that overlay's own HWND, and its logical
+size is fitted to its monitor's physical bounds. Pointer conversion uses the
+native window scale and client origin, preserving fractional pen coordinates.
+This changes no system or monitor DPI settings.
+
+The Windows smoke test checks every actual monitor against independent Win32
+client/screen coordinates and a real screen pixel from its synthetic red stroke.
+It also checks physical window bounds, central/far-edge drawing, hide/show and
+the existing move/resize/eraser/text/fading scenarios. Three-monitor evidence
+(100% and125%, negative horizontal/vertical origins) is retained under
+`.artifacts/multimonitor-*`; the earlier failure and incomplete coordinate-only
+fix are retained as negative controls.
+
+Final local validation passes the full Release solution build (zero warnings /
+errors), Managed CPU smoke and packaged Windows Native AOT smoke in default and
+forced software modes. Each native mode checks12 real monitor samples: all
+endpoint errors are zero, all physical pixel checks pass, and overlay origins /
+sizes match their monitors before and after hide/show. The probe waits for hit
+testing and each actual press/move/release transition; initial synthetic burst
+failures are retained alongside the final staged-input logs. The local candidate
+is `.artifacts/multimonitor-fixed/NovaPen.exe` (`1.0.1-rc.3`); no replacement RC
+has been published.
 
 ### Windows x64 Native AOT
 

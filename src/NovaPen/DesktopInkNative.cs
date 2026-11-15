@@ -113,6 +113,32 @@ internal sealed partial class DesktopInkNative : IDisposable
         SendMessageW(hwnd, 0x200, middleButton ? 0x10 : 1, Position(endX, endY));
         SendMessageW(hwnd, middleButton ? 0x208u : 0x202u, 0, Position(endX, endY));
     }
+    internal static void TestMouseMove(Window window, int x, int y, bool leftPressed = false) =>
+        SendMessageW(Handle(window), 0x200, leftPressed ? 1 : 0, (nint)((y << 16) | (x & 0xffff)));
+    internal static void TestLeftButton(Window window, int x, int y, bool pressed) =>
+        SendMessageW(Handle(window), pressed ? 0x201u : 0x202u, pressed ? 1 : 0, (nint)((y << 16) | (x & 0xffff)));
+    internal static PixelPoint TestClientPointToScreen(Window window, int x, int y)
+    {
+        var point = new NativePoint { X = x, Y = y };
+        if (ClientToScreen(Handle(window), ref point) == 0)
+            throw new Win32Exception(Marshal.GetLastPInvokeError());
+        return new PixelPoint(point.X, point.Y);
+    }
+    internal static PixelSize TestClientSize(Window window)
+    {
+        if (GetClientRect(Handle(window), out var rectangle) == 0)
+            throw new Win32Exception(Marshal.GetLastPInvokeError());
+        return new PixelSize(rectangle.Right - rectangle.Left, rectangle.Bottom - rectangle.Top);
+    }
+    internal static unsafe void SynchronizeDpi(Window window, double scale, PixelRect bounds)
+    {
+        // Avalonia's Win32 Position setter can update native DPI without its
+        // normal managed notification. Deliver that notification only to our
+        // own overlay; the suggested rectangle keeps it on the target screen.
+        var dpi = checked((ushort)Math.Round(scale * 96));
+        var rectangle = new NativeRect { Left = bounds.X, Top = bounds.Y, Right = bounds.Right, Bottom = bounds.Bottom };
+        SendMessageW(Handle(window), 0x02E0, (nint)((uint)dpi << 16 | dpi), (nint)(&rectangle));
+    }
     internal static void TestKey(Window window, int key)
     {
         var hwnd = Handle(window);
@@ -171,6 +197,8 @@ internal sealed partial class DesktopInkNative : IDisposable
     [StructLayout(LayoutKind.Sequential)]
     private struct NativePoint { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)]
     private struct BitmapInfo
     {
         public uint Size;
@@ -191,6 +219,8 @@ internal sealed partial class DesktopInkNative : IDisposable
     [LibraryImport("user32.dll")] private static partial nint GetAncestor(nint hwnd, uint flags);
     [LibraryImport("user32.dll")] private static partial nint SendMessageW(nint hwnd, uint message, nint wParam, nint lParam);
     [LibraryImport("user32.dll")] private static partial nint GetDC(nint hwnd);
+    [LibraryImport("user32.dll", SetLastError = true)] private static partial int ClientToScreen(nint hwnd, ref NativePoint point);
+    [LibraryImport("user32.dll", SetLastError = true)] private static partial int GetClientRect(nint hwnd, out NativeRect rectangle);
     [LibraryImport("gdi32.dll")] private static partial uint GetPixel(nint dc, int x, int y);
     internal static uint ReadScreenPixel(PixelPoint point)
     {

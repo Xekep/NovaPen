@@ -53,6 +53,7 @@ internal sealed class DesktopInkWindow : Window
         Opened += (_, _) =>
         {
             Position = _screenBounds.Position;
+            SynchronizeDesktopScale();
             ApplyState();
         };
         Closing += (_, e) =>
@@ -66,6 +67,28 @@ internal sealed class DesktopInkWindow : Window
         Closed += (_, _) => { CancelGesture(); _hyprlandEffects?.Dispose(); };
         PositionChanged += (_, _) => UpdateControlExclusion();
         SizeChanged += (_, _) => UpdateControlExclusion();
+        ScalingChanged += (_, _) => SynchronizeDesktopScale();
+        SynchronizeDesktopScale();
+    }
+
+    private bool _synchronizingDesktopScale;
+    private void SynchronizeDesktopScale()
+    {
+        if (!OperatingSystem.IsWindows() || _synchronizingDesktopScale) return;
+        _synchronizingDesktopScale = true;
+        try
+        {
+            // Avalonia 12.1.2's Win32 Position setter refreshes native scaling
+            // after moving the HWND, without notifying TopLevel's cached scale.
+            // Replay the missing notification for our own HWND so layout,
+            // rendering and native pointer input agree on this monitor.
+            var scale = DesktopScaling;
+            if (RenderScaling != scale)
+                DesktopInkNative.SynchronizeDpi(this, scale, _screenBounds);
+            Width = _screenBounds.Width / scale;
+            Height = _screenBounds.Height / scale;
+        }
+        finally { _synchronizingDesktopScale = false; }
     }
 
     public void ApplyState()
@@ -123,7 +146,21 @@ internal sealed class DesktopInkWindow : Window
     }
 
     public void Refresh() => _surface.InvalidateVisual();
-    internal Point DesktopPoint(Point local) => new(Position.X + local.X * RenderScaling, Position.Y + local.Y * RenderScaling);
+    internal bool IsInkInputReady(PixelPoint screenPoint) => IsVisible &&
+        ReferenceEquals(this.InputHitTest(this.PointToClient(screenPoint)), _surface);
+    internal Point DesktopPoint(Point local)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            // Win32 converts pointer messages using the native window scale.
+            // The presentation's cached RenderScaling can differ after placing
+            // an overlay on another monitor. Keep input in actual desktop
+            // pixels, without quantizing fractional pen positions.
+            var origin = _surface.PointToScreen(default);
+            return new(origin.X + local.X * DesktopScaling, origin.Y + local.Y * DesktopScaling);
+        }
+        return new(Position.X + local.X * RenderScaling, Position.Y + local.Y * RenderScaling);
+    }
 
     private void OnPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -157,7 +194,9 @@ internal sealed class DesktopInkWindow : Window
         var origin = DesktopPoint(point.Position);
         if (_session.Tool == InkTool.Text)
         {
-            BeginText(point.Position, origin);
+            // The editor is drawn in presentation DIPs, while pointer DIPs on
+            // Windows can use a different native scale. Match the ink transform.
+            BeginText(new Point((origin.X - Position.X) / RenderScaling, (origin.Y - Position.Y) / RenderScaling), origin);
             return;
         }
         if (_pointer is not null) return;

@@ -272,6 +272,7 @@ internal static class DrawingSmokeTest
         }
         if (OperatingSystem.IsWindows())
         {
+            await VerifyDesktopPointerAlignmentAsync(session);
             var overlay = session.Overlays.First();
             var count = session.Document.Marks.Count;
             session.SelectTool(InkTool.Pen);
@@ -300,15 +301,12 @@ internal static class DrawingSmokeTest
             session.Undo();
             Check(session.Document.Marks[^1].Same(originalStroke), "Desktop pointer move undo failed.");
             var resize = InkSelection.HandlePoint(originalStroke, 4, 1 / overlay.RenderScaling);
-            // Invert DesktopPoint, then use the platform's DIP-to-pixel mapping.
-            // SendMessage expects native client pixels. A render scale alone
-            // need not match the window's input scale on a mixed-DPI desktop.
-            var resizeLocal = new Point((resize.X - overlay.Position.X) / overlay.RenderScaling, (resize.Y - overlay.Position.Y) / overlay.RenderScaling);
-            var clientOrigin = overlay.PointToScreen(default);
-            var resizeStart = overlay.PointToScreen(resizeLocal);
-            var resizeEnd = overlay.PointToScreen(resizeLocal + new Vector(40, 30));
-            DesktopInkNative.TestMouseGesture(overlay, resizeStart.X - clientOrigin.X, resizeStart.Y - clientOrigin.Y,
-                resizeEnd.X - clientOrigin.X, resizeEnd.Y - clientOrigin.Y);
+            // Both stored ink and WM_MOUSE coordinates are physical pixels.
+            // Use Win32's actual client origin, independent of Avalonia scales.
+            var clientOrigin = DesktopInkNative.TestClientPointToScreen(overlay, 0, 0);
+            var resizeX = (int)Math.Round(resize.X - clientOrigin.X);
+            var resizeY = (int)Math.Round(resize.Y - clientOrigin.Y);
+            DesktopInkNative.TestMouseGesture(overlay, resizeX, resizeY, resizeX + 40, resizeY + 30);
             await Task.Delay(80);
             Check(session.Document.Marks[^1].Transform != Matrix.Identity, "Desktop pointer resize handle did not transform the stroke.");
             session.Undo(); Check(session.Document.Marks[^1].Same(originalStroke), "Desktop resize undo failed.");
@@ -1142,6 +1140,94 @@ internal static class DrawingSmokeTest
         var bounds = catalog.Read((nuint)window.TryGetPlatformHandle()!.Handle)?.Bounds ?? new PixelRect(window.Position, new PixelSize(
             (int)Math.Ceiling(window.Bounds.Width * window.RenderScaling), (int)Math.Ceiling(window.Bounds.Height * window.RenderScaling)));
         DesktopInkNative.SaveScreenshot(path, bounds);
+    }
+    private static async Task VerifyDesktopPointerAlignmentAsync(DrawingSession session)
+    {
+        var color = session.Color;
+        var size = session.PenSize;
+        var tool = session.Tool;
+        var failures = new List<string>();
+        try
+        {
+            session.Color = Colors.Red;
+            session.PenSize = 10;
+            session.SelectTool(InkTool.Pen);
+            await Task.Delay(150);
+            foreach (var overlay in session.Overlays)
+            {
+                foreach (var phase in new[] { "initial", "reshown" })
+                {
+                    if (phase == "reshown") { overlay.Hide(); overlay.Show(); await Task.Delay(150); }
+                    var clientSize = DesktopInkNative.TestClientSize(overlay);
+                    var screen = overlay.Screens.ScreenFromPoint(overlay.Position + new PixelPoint(1, 1))
+                        ?? throw new InvalidOperationException("Desktop overlay has no target monitor.");
+                    Check(clientSize == screen.Bounds.Size, "Desktop overlay changed its physical size relative to its monitor.");
+                    Check(DesktopInkNative.TestClientPointToScreen(overlay, 0, 0) == screen.Bounds.Position,
+                        "Desktop overlay client origin differs from its monitor origin.");
+                    foreach (var nearCorner in new[] { false, true })
+                    {
+                        int x = nearCorner ? clientSize.Width - 240 : clientSize.Width / 4;
+                        int y = nearCorner ? clientSize.Height - 180 : clientSize.Height / 3;
+                        int endX = x + 120, endY = y + 60;
+                        // Independent Win32 mapping of the exact client pixels sent to
+                        // WM_MOUSE*. Do not derive this expectation from DesktopPoint.
+                        var start = DesktopInkNative.TestClientPointToScreen(overlay, x, y);
+                        var end = DesktopInkNative.TestClientPointToScreen(overlay, endX, endY);
+                        var middle = DesktopInkNative.TestClientPointToScreen(overlay, (x + endX) / 2, (y + endY) / 2);
+                        var readyWait = Stopwatch.StartNew();
+                        while (!overlay.IsInkInputReady(start) && readyWait.Elapsed < TimeSpan.FromSeconds(3))
+                        {
+                            overlay.UpdateLayout();
+                            await Task.Delay(25);
+                        }
+                        Check(overlay.IsInkInputReady(start), "Desktop ink surface did not become ready for native input.");
+                        var count = session.DesktopDocument.Marks.Count;
+                        // Real pointer stages arrive on separate dispatcher turns.
+                        // Wait for each actual document transition rather than
+                        // assuming a burst of WM_MOUSE messages was processed.
+                        DesktopInkNative.TestMouseMove(overlay, x, y);
+                        await Task.Delay(25);
+                        DesktopInkNative.TestLeftButton(overlay, x, y, pressed: true);
+                        await WaitForPointerStageAsync(() => session.DesktopDocument.Preview is not null, "press");
+                        DesktopInkNative.TestMouseMove(overlay, endX, endY, leftPressed: true);
+                        await WaitForPointerStageAsync(() => session.DesktopDocument.Preview?.Points.Count > 1, "move");
+                        DesktopInkNative.TestLeftButton(overlay, endX, endY, pressed: false);
+                        await WaitForPointerStageAsync(() => session.DesktopDocument.Preview is null &&
+                            session.DesktopDocument.Marks.Count == count + 1, "release");
+                        await Task.Delay(150);
+                        Check(session.DesktopDocument.Marks.Count == count + 1, $"Per-monitor pointer check did not create exactly one stroke: phase={phase}, corner={nearCorner}, origin={overlay.Position}.");
+                        var mark = session.DesktopDocument.Marks[^1];
+                        var firstError = ((Vector)(mark.Points[0] - new Point(start.X, start.Y))).Length;
+                        var lastError = ((Vector)(mark.Points[^1] - new Point(end.X, end.Y))).Length;
+                        bool visible = false;
+                        var wait = Stopwatch.StartNew();
+                        while (!visible && wait.Elapsed < TimeSpan.FromSeconds(2))
+                        {
+                            visible = ScreenColorNear(DesktopInkNative.ReadScreenPixel(middle), 0x000000FF);
+                            if (!visible) await Task.Delay(50);
+                        }
+                        var result = $"phase={phase}, corner={nearCorner}, origin={overlay.Position}, client={clientSize}, render={overlay.RenderScaling}, desktop={overlay.DesktopScaling}, startError={firstError:F3}, endError={lastError:F3}, physicalPixel={visible}";
+                        Console.WriteLine($"Desktop pointer alignment: {result}");
+                        if (firstError > .75 || lastError > .75 || !visible) failures.Add(result);
+                        session.Undo();
+                        await Task.Delay(50);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            session.Color = color;
+            session.PenSize = size;
+            session.SelectTool(tool, remember: false);
+        }
+        Check(failures.Count == 0, "Desktop cursor/ink alignment failed: " + string.Join("; ", failures));
+    }
+    private static async Task WaitForPointerStageAsync(Func<bool> completed, string stage)
+    {
+        var wait = Stopwatch.StartNew();
+        while (!completed() && wait.Elapsed < TimeSpan.FromSeconds(3)) await Task.Delay(25);
+        Check(completed(), $"Per-monitor native pointer {stage} did not complete.");
     }
     private static void Check(bool condition, string message)
     {
