@@ -91,6 +91,11 @@ for(int index=0;index<6;index++)
  Reject(()=>Math2Mode0PriorRepeatOutgoing.OriginalPayloadLease.Issue(outgoingRepeat,null!));
  using var preparation=Math2Mode0RepeatApplyPreparation.Prepare(outgoingRepeat);
  var leasePrepared=preparation.CopyOwnedResult();Require(leasePrepared.Prepared&&leasePrepared.Ready&&!leasePrepared.Failed&&!leasePrepared.Released&&!leasePrepared.OldReceiptConsumed&&!leasePrepared.MutationEntered);
+ var domPreflight=preparation.CopyDomPreflight();Require(domPreflight.Completed&&domPreflight.Compatible&&domPreflight.BoundPaths==export.Dom.Length&&domPreflight.VisitedOperations==export.Dom.Length);
+ Require(leasePrepared.DomPreflightCompleted&&leasePrepared.DomCompatible&&leasePrepared.DomPreflightOperations==export.Dom.Length);
+ Require(domPreflight.Nodes.Length>0&&domPreflight.ScratchRoot==1);
+ var copy=preparation.CopyDomPreflight();copy.Nodes[0]=copy.Nodes[0] with{Name="not-authority"};copy.Links[0].Children[0]=-1;
+ Require(preparation.CopyDomPreflight().Nodes[0].Name==domPreflight.Nodes[0].Name&&preparation.CopyDomPreflight().Links[0].Children[0]!=-1);
  Require(leasePrepared.DomOperations==export.Dom.Length&&leasePrepared.SourceCommands==export.Source.Length&&leasePrepared.RetainedNodes==export.FourthWriter.Length&&leasePrepared.RawObjects==3);
  Require(leasePrepared.OldEpoch==ownerSnapshot.AppliedEpoch&&leasePrepared.OldNext==ownerSnapshot.Next);
  Require(preparation.IsFor(outgoingRepeat));if(previousOutgoing is not null)Require(!preparation.IsFor(previousOutgoing));
@@ -104,9 +109,9 @@ for(int index=0;index<6;index++)
  // Releasing an ancestor cannot revive original read authority through the lease.
  if(index==0)late.Dispose();else if(index==1)temporary.Dispose();else if(index==2)candidate.Dispose();else if(index==3)next.Dispose();else if(index==4)p.Application.Dispose();else p.Field.Dispose();
  Reject(()=>late.CopyResult());var afterAncestor=preparation.CopyOwnedResult();Require(afterAncestor==leasePrepared);
- preparation.Dispose();Reject(()=>preparation.CopyOwnedResult());Require(preparation.CopySnapshot().Released);
+ preparation.Dispose();Reject(()=>preparation.CopyOwnedResult());Reject(()=>preparation.CopyDomPreflight());Require(preparation.CopySnapshot().Released);
  var afterRelease=outgoingRepeat.CopySnapshot();Require(afterRelease.FourthWriter.Length==0&&afterRelease.Dom.Length==0&&afterRelease.Source.Length==0);
- leases.Add(new(index,leasePrepared,afterExporter,afterAncestor,preparation.CopySnapshot(),afterRelease.FourthWriter.Length));
+ leases.Add(new(index,leasePrepared,afterExporter,afterAncestor,preparation.CopySnapshot(),afterRelease.FourthWriter.Length,domPreflight));
  previousPreparation=preparation;previousOutgoing=outgoingRepeat;
 }
 
@@ -125,5 +130,5 @@ record Actual(int Case,int Width,bool Reversed,InkStroke[] Ink,Math2Mode0Current
 record Failure(int Mode,Math2Mode0LateSnapshot Snapshot,Math2Mode0PriorCandidateSnapshot Candidate);
 record ExportFailure(int Mode,Math2Mode0RepeatOutgoingSnapshot Snapshot,Math2Mode0CurrentInputSnapshot OriginalCurrent,Math2Mode0OriginalDomNode[] OriginalAfter,Math2Mode0PriorCandidateSnapshot Candidate);
 record Capture(int Controls,string Runtime,Regression[] Unchanged,Actual[] Actual,Failure[] Failures,ExportFailure[] ExportFailures,LeaseObservation[] Leases);
-record LeaseObservation(int Case,Math2Mode0RepeatApplyPreparationSnapshot Prepared,Math2Mode0RepeatApplyPreparationSnapshot AfterExporterDispose,Math2Mode0RepeatApplyPreparationSnapshot AfterAncestorDispose,Math2Mode0RepeatApplyPreparationSnapshot Released,int ExporterNodesAfterRelease);
+record LeaseObservation(int Case,Math2Mode0RepeatApplyPreparationSnapshot Prepared,Math2Mode0RepeatApplyPreparationSnapshot AfterExporterDispose,Math2Mode0RepeatApplyPreparationSnapshot AfterAncestorDispose,Math2Mode0RepeatApplyPreparationSnapshot Released,int ExporterNodesAfterRelease,Math2RepeatDomPreflightSnapshot DomPreflight);
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive=true)][JsonSerializable(typeof(Fixture[]))][JsonSerializable(typeof(Capture))]internal partial class Json:JsonSerializerContext;

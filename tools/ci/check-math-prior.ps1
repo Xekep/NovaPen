@@ -78,6 +78,10 @@ foreach ($probeName in @('LegacyMathTemporaryWriter.Probe', 'LegacyMathPriorDomD
       if ($probeName -eq 'LegacyMathRepeatApplyPreparation.Probe') {
         python -I -B "$folder/audit_lease.py" $capture
         if ($LASTEXITCODE -ne 0) { throw "Repeat apply preparation $mode independent lease audit failed." }
+        python -I -B "$folder/reference_preflight.py" check $capture
+        if ($LASTEXITCODE -ne 0) { throw "Repeat DOM $mode independent structural preflight replay failed." }
+        python -I -B "$folder/reference_preflight.py" negative $capture
+        if ($LASTEXITCODE -ne 0) { throw "Repeat DOM $mode corruption controls failed." }
       }
       if ($probeName -eq 'LegacyMathRepeatOutgoing.Probe') {
         python -B "$folder/audit_output.py" $capture "$capture.repeat.json"

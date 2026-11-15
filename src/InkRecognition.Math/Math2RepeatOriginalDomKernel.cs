@@ -53,7 +53,7 @@ internal sealed class Math2RepeatDomPlan
         // retained nodes even if earlier insert/delete changes path positions.
         return new(arena,field,operations,parents);
     }
-    private static void ValidateClone(Math2Mode0OriginalArena source,Math2Mode0OriginalArena.Node node,int depth,Math2DomDiffWork work)
+    internal static void ValidateClone(Math2Mode0OriginalArena source,Math2Mode0OriginalArena.Node node,int depth,Math2DomDiffWork work)
     {
         work.Visit(128);if(depth>64||source.WriterFreed(node))throw new NotSupportedException("Bounded live clone payload required before original effects.");
         var children=source.Children(node.Id);work.Visit(children.Count);
@@ -71,8 +71,75 @@ internal sealed class Math2RepeatDomPlan
         Arena.ApplyRepeatDomOperand(Parents[cursor],Operations[cursor],work,tagMapping);cursor++;
     }
 }
+internal sealed record Math2RepeatDomPreflightLinks(int Id,int[] Attributes,int[] Children);
+internal sealed record Math2RepeatDomPreflightSnapshot(bool Completed,bool Compatible,int BoundPaths,int VisitedOperations,
+    int StructuralChanges,int ScratchRoot,Math2Mode0OriginalDomNode[] Nodes,Math2RepeatDomPreflightLinks[] Links);
+// Engine E2870's bounded kind3/default-Math structural compatibility simulation.
+// It does not apply scalar edits or grant original-document mutation authority.
+internal static class Math2RepeatDomPreflight
+{
+    internal static Math2RepeatDomPreflightSnapshot Run(Math2Mode0OriginalArena source,Math2Mode0OriginalArena.Node field,
+        IReadOnlyList<Math2RepeatDomOperand> operations,Math2DomDiffWork work)
+    {
+        work.Visit();if(field.Id<1||field.Id>source.Nodes.Count||!ReferenceEquals(source.Nodes[field.Id-1],field)||source.WriterFreed(field)||field.Kind!=3||operations.Count>65536)
+            throw new NotSupportedException("Bounded actual kind3 field required for scratch compatibility.");
+        if(operations.Count==0)return new(true,true,0,0,0,0,[],[]); // Native empty route allocates no scratch writer.
+        Math2RepeatDomPlan.ValidateClone(source,field,0,work);
+        foreach(var op in operations)
+        {
+            work.Visit();if(op.Operation is not(2 or 4 or 5 or 6 or 7)||op.Path.Length>64)throw new NotSupportedException("Produced bounded default Math operations required.");
+            if(op.Operation!=2)continue;
+            if(op.PayloadRoot<1||op.PayloadRoot>op.PayloadWriter.Nodes.Count)throw new NotSupportedException("Known structural clone payload required.");
+            var payload=op.PayloadWriter.Nodes[op.PayloadRoot-1];if(payload.Kind is<1 or>3)throw new NotSupportedException("Ordinary child payload required.");
+            Math2RepeatDomPlan.ValidateClone(op.PayloadWriter,payload,0,work);
+        }
+        var scratch=new Math2Mode0OriginalArena(Math2Mode0RepeatDomViews.PreparedNames());
+        int root=scratch.CloneOriginal(source,field.Id,0,_=>work.Visit(128));
+        var parents=new Math2Mode0OriginalArena.Node?[operations.Count];int bound=0,visited=0,changed=0;bool compatible=true;
+        // E2870 binds the entire path table before entering any row effects.
+        for(int i=0;i<operations.Count;i++)
+        {
+            work.Visit();Math2Mode0OriginalArena.Node? at=scratch.Nodes[root-1];
+            foreach(int ordinal in operations[i].Path)
+            {
+                work.Visit();if(at is null)break;var list=scratch.Children(at.Id);work.Visit(list.Count);
+                Math2Mode0OriginalArena.Node? found=null;int index=0;
+                foreach(var node in list){work.Visit();if(node.Kind==0)continue;if(index++==ordinal){found=node;break;}}
+                at=found;
+            }
+            parents[i]=at;if(at is null){compatible=false;break;}bound++;
+        }
+        for(int i=0;compatible&&i<operations.Count;i++)
+        {
+            work.Visit();visited++;var op=operations[i];
+            if(op.Operation is 2 or 4)compatible=scratch.SimulateRepeatStructure(parents[i]!,op,work,ref changed);
+            // Operations5/6/7 still bind their paths, but E2870 does not apply them.
+        }
+        work.Visit(checked(scratch.Nodes.Count*8L));var nodes=scratch.Snapshot();
+        var links=scratch.Nodes.Select(n=>{var list=scratch.Children(n.Id);work.Visit(list.Count);return new Math2RepeatDomPreflightLinks(n.Id,list.Where(c=>c.Kind==0).Select(c=>c.Id).ToArray(),list.Where(c=>c.Kind!=0).Select(c=>c.Id).ToArray());}).ToArray();
+        return new(true,compatible,bound,visited,changed,root,nodes,links);
+    }
+}
 internal sealed partial class Math2Mode0OriginalArena
 {
+    internal bool SimulateRepeatStructure(Node parent,Math2RepeatDomOperand op,Math2DomDiffWork work,ref int changed)
+    {
+        work.Visit();if(parent.Kind!=3)throw new NotSupportedException("Ordinary retained scratch parent required.");
+        var list=WriterChildren(parent);work.Visit(list.Count);Node? before=null;int count=0;
+        foreach(var child in list){work.Visit();if(child.Kind==0)continue;if(count++==op.Ordinal){before=child;break;}}
+        if(op.Operation==4)
+        {
+            if(before is null)return false;
+            WriterDetach(before,work);changed++;return true; // Scratch VE8 detaches; it does not call free90.
+        }
+        if(op.Operation!=2)throw new NotSupportedException("Structural simulation only.");
+        // Native clones even when the later append-ordinal compatibility fails.
+        int id=CloneOriginal(op.PayloadWriter,op.PayloadRoot,0,_=>work.Visit(128));var copy=Nodes[id-1];
+        if(before is null&&count!=op.Ordinal)return false;
+        WriterParent(parent,copy,false,work);work.Visit(list.Count+1L);
+        int index=before is null?list.Count:list.IndexOf(before);if(index<0)throw new InvalidOperationException();
+        list.Insert(index,copy);copy.Parent=parent.Id;changed++;return true;
+    }
     internal void ApplyRepeatDomOperand(Node parent,Math2RepeatDomOperand op,Math2DomDiffWork work,IReadOnlyDictionary<long,long>? tagMapping)
     {
         work.Visit();if(parent.Id<1||parent.Id>Nodes.Count||!ReferenceEquals(Nodes[parent.Id-1],parent)||WriterFreed(parent)||parent.Kind!=3)
@@ -83,14 +150,13 @@ internal sealed partial class Math2Mode0OriginalArena
         {
             case 2:
             {
-                if(tagMapping is not null)
-                {
-                    work.Visit(tagMapping.Count);
-                    foreach(var pair in tagMapping){work.Visit();if(pair.Key!=pair.Value)throw new NotSupportedException("Nonidentity subtree tag remapping needs the native descendant visitor; no clone effects in this bounded profile.");}
-                }
                 var payload=op.PayloadWriter.Nodes[op.PayloadRoot-1];if(payload.Kind is<1 or>3)throw new NotSupportedException("Ordinary produced child payload required.");
+                // Validate the bounded typed-tag profile before clone/attach effects.
+                if(payload.Kind==3&&tagMapping is {Count:>0})ValidateRepeatTags(op.PayloadWriter,payload,0,work);
                 int id=CloneOriginal(op.PayloadWriter,payload.Id,0,_=>work.Visit(128));var copy=Nodes[id-1];WriterParent(parent,copy,false,work);
-                work.Visit(checked(list.Count*2L+1));int index=child is null?list.Count:list.IndexOf(child);if(index<0)throw new InvalidOperationException();list.Insert(index,copy);copy.Parent=parent.Id;break;
+                work.Visit(checked(list.Count*2L+1));int index=child is null?list.Count:list.IndexOf(child);if(index<0)throw new InvalidOperationException();list.Insert(index,copy);copy.Parent=parent.Id;
+                if(copy.Kind==3&&tagMapping is {Count:>0})RemapRepeatTags(copy,true,tagMapping,work);
+                break;
             }
             case 4:
             {
@@ -126,5 +192,35 @@ internal sealed partial class Math2Mode0OriginalArena
             }
             default:throw new NotSupportedException();
         }
+    }
+    private static void ValidateRepeatTags(Math2Mode0OriginalArena source,Node node,int depth,Math2DomDiffWork work)
+    {
+        work.Visit();if(depth>64||source.WriterFreed(node))throw new NotSupportedException("Bounded live subtree tag visitor required.");
+        var list=source.Children(node.Id);work.Visit(list.Count);
+        int tags=0;
+        foreach(var attr in list)
+        {
+            work.Visit();if(attr.Kind!=0||attr.Name.Text!="tag")continue;
+            if(node.Kind!=3||++tags>1||attr.Tag!=4||attr.Number is null)
+                throw new NotSupportedException("Subtree remapping admits unique produced INT64 tag attributes on elements.");
+        }
+        foreach(var child in list)if(child.Kind!=0)ValidateRepeatTags(source,child,depth+1,work);
+    }
+    private void RemapRepeatTags(Node node,bool root,IReadOnlyDictionary<long,long> mapping,Math2DomDiffWork work)
+    {
+        work.Visit();var list=Children(node.Id);work.Visit(list.Count);
+        // Native descendant axis13 starts at the first child (DE8E0), and
+        // DF820 descends before yielding that child's attributes.
+        if(!root)foreach(var child in list)if(child.Kind!=0)RemapRepeatTags(child,false,mapping,work);
+        foreach(var attr in list)
+        {
+            work.Visit();if(attr.Kind!=0||attr.Name.Text!="tag")continue;
+            long value=attr.Number??throw new InvalidOperationException("Prevalidated typed tag required.");
+            // E2D70/V168 -> V128 skips missing/-1 at the clone root.
+            // E56F0 (.//@tag)/V100 writes a found mapping verbatim, including -1.
+            if(value!=-1&&mapping.TryGetValue(value,out long mapped)&&(!root||mapped!=-1))
+            {work.Visit();attr.Tag=4;attr.Text=null;attr.Number=mapped;}
+        }
+        if(root)foreach(var child in list)if(child.Kind!=0)RemapRepeatTags(child,false,mapping,work);
     }
 }

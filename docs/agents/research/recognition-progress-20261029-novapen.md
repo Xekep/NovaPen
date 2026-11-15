@@ -6,6 +6,22 @@ the later ordinary SourceInk factor200 composition repair.
 Russian cursive and the complete English MAIN publication path remain unfinished.
 Passing numerical probes is not evidence of complete handwriting recognition.
 
+The [3 November subtree-tag increment](math-repeat-subtree-tags-20261103.md)
+adds bounded nonidentity remapping to the prepared repeat DOM kernel and updates
+the development SDK to .NET11 RC3. The later
+[owned structural compatibility increment](math-repeat-dom-compatibility-20261103.md)
+passes109 prepared and886 owning real-model controls in Managed and Native AOT
+after installation of the local C++ toolchain. Original repeat application,
+journal/rollback and successor handling remain unfinished. Full application AOT
+also requires the documented Avalonia resource-ordering workaround; the earlier
+desktop pointer-resize smoke failure has not been resolved by this engine port.
+
+On 16 November the prepared DOM controls were expanded to121 and the independent
+structural auditor was hardened against duplicate/missing cases and disabled
+Python assertions. Thirteen corruption controls now run in both CI modes.
+The RC3 references above describe the historical checkpoint; current application
+and server builds use stable SDK11.0.100.
+
 ## Russian first acoustic correction
 
 The owned Russian source at offset 6120 requires mixed exponential/sigmoid

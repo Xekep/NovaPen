@@ -14,7 +14,7 @@ internal sealed partial class Math2Mode0PriorLateRegistration
     internal sealed partial class RepeatBorrow
     {
         internal void PrepareOriginalApply(Math2Mode0PriorRepeatOutgoing target,Math2Mode0RepeatApplyPreparation preparation,Math2DomDiffWork work)
-        {WithAccess(target,AccessKind.Validate,a=>{target.PrepareOriginalApplyClaimed(this,preparation,input.ReadRepeatCohort(a,work));return 0;});}
+        {WithAccess(target,AccessKind.Validate,a=>{target.PrepareOriginalApplyClaimed(this,preparation,input.ReadRepeatCohort(a,work),work);return 0;});}
     }
 }
 internal sealed partial class Math2Mode0PriorRepeatOutgoing
@@ -46,6 +46,17 @@ internal sealed partial class Math2Mode0PriorRepeatOutgoing
         }
         internal (int Dom,int Source,int Nodes) Counts(Math2Mode0RepeatApplyPreparation actual)
         {lock(leaseGate){Check(actual);return(owner.dom.Count,owner.source.Count,owner.fourth.Nodes.Count);}}
+        internal Math2RepeatDomPreflightSnapshot Preflight(Math2Mode0RepeatApplyPreparation actual,Math2Mode0RepeatCohort cohort,Math2DomDiffWork work)
+        {
+            lock(leaseGate)
+            {
+                Check(actual);if(!Monitor.IsEntered(owner.gate)||!ReferenceEquals(owner.activeApplyPreparation,actual)||owner.activeValidateBorrow is null)
+                    throw new InvalidOperationException("Only the active private owning preparation may read actual operands for scratch simulation.");
+                owner.ValidateCohort(owner.activeValidateBorrow,cohort);work.Visit(checked(owner.dom.Count*8L));
+                var operands=owner.dom.Select(op=>new Math2RepeatDomOperand(op.Operation,op.Path,op.Ordinal,owner.fourth,op.Payload?.Id??0)).ToArray();
+                var result=Math2RepeatDomPreflight.Run(cohort.Original,cohort.OriginalField,operands,work);cohort.Check();return result;
+            }
+        }
         public void Dispose()
         {lock(owner.gate){lock(leaseGate){if(released)return;released=true;if(ReferenceEquals(owner.activeApplyLease,this))owner.activeApplyLease=null;if(owner.released)owner.ClearRepeatApplyPayloads();}}}
     }
@@ -62,17 +73,17 @@ internal sealed partial class Math2Mode0PriorRepeatOutgoing
                 finally{activeValidateBorrow=null;activeApplyPreparation=null;}
             }
         },token);
-    internal void PrepareOriginalApplyClaimed(Math2Mode0PriorLateRegistration.RepeatBorrow input,Math2Mode0RepeatApplyPreparation target,Math2Mode0RepeatCohort cohort)
+    internal void PrepareOriginalApplyClaimed(Math2Mode0PriorLateRegistration.RepeatBorrow input,Math2Mode0RepeatApplyPreparation target,Math2Mode0RepeatCohort cohort,Math2DomDiffWork work)
     {
         RequirePrivateAccess(input,Math2Mode0PriorLateRegistration.RepeatBorrow.AccessKind.Validate);cohort.Check();
         if(!ReferenceEquals(activeApplyPreparation,target)||!target.IsFor(this))throw new InvalidOperationException("Exact active private preparation required.");
         var lease=OriginalPayloadLease.Issue(this,target);activeApplyLease=lease;originalApplyClaimed=true;
-        try{target.BindActualLease(this,lease,cohort);}catch{lease.Dispose();throw;}
+        try{target.BindActualLease(this,lease,cohort,work);}catch{lease.Dispose();throw;}
     }
 }
 internal sealed record Math2Mode0RepeatApplyPreparationSnapshot(bool Prepared,bool Ready,bool Failed,bool Released,
     bool OldReceiptConsumed,bool MutationEntered,int DomOperations,int SourceCommands,int RetainedNodes,long OldEpoch,
-    long OldNext,int RawObjects,string Scope);
+    long OldNext,int RawObjects,bool DomPreflightCompleted,bool DomCompatible,int DomPreflightOperations,string Scope);
 // PREPARATION ONLY in this increment: no original mutation, successor, receiver
 // or apply API is supplied. Mutation will require an independently pinned grant.
 internal sealed class Math2Mode0RepeatApplyPreparation:IDisposable
@@ -82,6 +93,7 @@ internal sealed class Math2Mode0RepeatApplyPreparation:IDisposable
     private Math2Mode0OriginalApplication? application;private Math2Mode0CurrentInputHandle? handle;
     private object? originalInk,originalArena;private LegacyOwnedRawInkDocument? document;private Math2Mode0CurrentInputReceipt? receipt;
     private long epoch,next;private bool prepared,ready,failed,released;private int dom,source,nodes;
+    private Math2RepeatDomPreflightSnapshot? domPreflight;
     private Math2Mode0RepeatApplyPreparation(Math2Mode0PriorRepeatOutgoing outgoing){this.outgoing=outgoing;}
     internal bool IsFor(Math2Mode0PriorRepeatOutgoing actual)=>ReferenceEquals(outgoing,actual);
     internal static Math2Mode0RepeatApplyPreparation Prepare(Math2Mode0PriorRepeatOutgoing outgoing,CancellationToken token=default)
@@ -98,23 +110,32 @@ internal sealed class Math2Mode0RepeatApplyPreparation:IDisposable
         }
         catch{lock(result.gate)result.failed=true;result.Dispose();throw;}
     }
-    internal void BindActualLease(Math2Mode0PriorRepeatOutgoing actual,Math2Mode0PriorRepeatOutgoing.OriginalPayloadLease payload,Math2Mode0RepeatCohort cohort)
+    internal void BindActualLease(Math2Mode0PriorRepeatOutgoing actual,Math2Mode0PriorRepeatOutgoing.OriginalPayloadLease payload,Math2Mode0RepeatCohort cohort,Math2DomDiffWork work)
     {
         lock(gate)
         {
             if(prepared||released||failed||!ReferenceEquals(outgoing,actual))throw new InvalidOperationException("Private synchronous preparation required.");
             cohort.Check();payload.Check(this);lease=payload;application=cohort.Application;handle=cohort.Handle;originalInk=cohort.OriginalInk;originalArena=cohort.Original;document=cohort.Document;receipt=cohort.Receipt;epoch=cohort.Epoch;next=cohort.OldNext;
-            var counts=payload.Counts(this);dom=counts.Dom;source=counts.Source;nodes=counts.Nodes;prepared=true;
+            var counts=payload.Counts(this);dom=counts.Dom;source=counts.Source;nodes=counts.Nodes;
+            domPreflight=payload.Preflight(this,cohort,work);prepared=true;
         }
     }
     internal Math2Mode0RepeatApplyPreparationSnapshot CopySnapshot()
-    {lock(gate)return new(prepared,ready,failed,released,false,false,dom,source,nodes,epoch,next,document?.ObjectCount??0,"Actual owned export lease/preparation only; no mutation or original apply.");}
+    {lock(gate)return new(prepared,ready,failed,released,false,false,dom,source,nodes,epoch,next,document?.ObjectCount??0,domPreflight?.Completed??false,domPreflight?.Compatible??false,domPreflight?.VisitedOperations??0,"Actual owned payload lease and structural scratch compatibility only; no mutation or original apply.");}
     internal Math2Mode0RepeatApplyPreparationSnapshot CopyOwnedResult()
     {lock(gate){ObjectDisposedException.ThrowIf(released,this);if(failed||!prepared||!ready||lease is null)throw new InvalidOperationException("Ready owning payload preparation required.");lease.Check(this);var counts=lease.Counts(this);if(counts!=(dom,source,nodes))throw new InvalidOperationException("Owned payload storage changed.");return CopySnapshot();}}
+    internal Math2RepeatDomPreflightSnapshot CopyDomPreflight()
+    {
+        lock(gate)
+        {
+            CopyOwnedResult();var value=domPreflight??throw new InvalidOperationException("Completed structural simulation required.");
+            return value with{Nodes=value.Nodes.ToArray(),Links=value.Links.Select(row=>row with{Attributes=row.Attributes.ToArray(),Children=row.Children.ToArray()}).ToArray()};
+        }
+    }
     public void Dispose()
     {
         Math2Mode0PriorRepeatOutgoing.OriginalPayloadLease? release;
-        lock(gate){if(released)return;released=true;release=lease;lease=null;application=null;handle=null;originalInk=null;originalArena=null;document=null;receipt=null;}
+        lock(gate){if(released)return;released=true;release=lease;lease=null;application=null;handle=null;originalInk=null;originalArena=null;document=null;receipt=null;if(domPreflight is not null)domPreflight=domPreflight with{Nodes=[],Links=[]};}
         release?.Dispose();
     }
 }
