@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 package="$(realpath "${1:?Pass a deb package}")"
+if [[ -f "$package.sha256" ]]; then
+  (cd "$(dirname "$package")" && sha256sum --check --strict "$(basename "$package").sha256")
+fi
 [[ "$(dpkg-deb -f "$package" Package)" == novapen ]]
 [[ "$(dpkg-deb -f "$package" Conflicts)" == blurmask ]]
 [[ "$(dpkg-deb -f "$package" Replaces)" == blurmask ]]

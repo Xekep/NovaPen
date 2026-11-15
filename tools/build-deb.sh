@@ -50,7 +50,11 @@ Description: Desktop annotation and shared canvas
  No separately installed .NET runtime is required. Uses X11/XWayland, with optional native Wayland for the separate canvas.
 EOF
 mkdir -p "$output"
-package="$output/novapen_${version}_${arch}.deb"
+# Keep Debian's ~ prerelease ordering in control metadata, but use a filename
+# GitHub Releases preserves. Its upload API replaces ~ with ., which would
+# otherwise leave the checksum receipt pointing to a nonexistent asset.
+asset_version="${version//\~/.}"
+package="$output/novapen_${asset_version}_${arch}.deb"
 dpkg-deb --root-owner-group --build "$root" "$package"
 (cd "$output" && sha256sum "$(basename "$package")") > "$package.sha256"
 echo "Built $package"
