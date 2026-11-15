@@ -300,8 +300,15 @@ internal static class DrawingSmokeTest
             session.Undo();
             Check(session.Document.Marks[^1].Same(originalStroke), "Desktop pointer move undo failed.");
             var resize = InkSelection.HandlePoint(originalStroke, 4, 1 / overlay.RenderScaling);
+            // Invert DesktopPoint, then use the platform's DIP-to-pixel mapping.
+            // SendMessage expects native client pixels. A render scale alone
+            // need not match the window's input scale on a mixed-DPI desktop.
             var resizeLocal = new Point((resize.X - overlay.Position.X) / overlay.RenderScaling, (resize.Y - overlay.Position.Y) / overlay.RenderScaling);
-            DesktopInkNative.TestMouseGesture(overlay, (int)resizeLocal.X, (int)resizeLocal.Y, (int)resizeLocal.X + 40, (int)resizeLocal.Y + 30);
+            var clientOrigin = overlay.PointToScreen(default);
+            var resizeStart = overlay.PointToScreen(resizeLocal);
+            var resizeEnd = overlay.PointToScreen(resizeLocal + new Vector(40, 30));
+            DesktopInkNative.TestMouseGesture(overlay, resizeStart.X - clientOrigin.X, resizeStart.Y - clientOrigin.Y,
+                resizeEnd.X - clientOrigin.X, resizeEnd.Y - clientOrigin.Y);
             await Task.Delay(80);
             Check(session.Document.Marks[^1].Transform != Matrix.Identity, "Desktop pointer resize handle did not transform the stroke.");
             session.Undo(); Check(session.Document.Marks[^1].Same(originalStroke), "Desktop resize undo failed.");
@@ -361,8 +368,15 @@ internal static class DrawingSmokeTest
             Check(session.Document.FadingMarks[0].FadeOpacity(Stopwatch.GetTimestamp()) is > 0 and < 1,
                 "Live temporary ink did not begin fading.");
             await Task.Delay(650);
-            for (var i = 0; i < 10 && session.Document.FadingMarks.Count != 0; i++) await Task.Delay(100);
-            Check(session.Document.FadingMarks.Count == 0, "Fade timer did not remove the stroke.");
+            var fadeWait = Stopwatch.StartNew();
+            while (session.Document.FadingMarks.Count != 0 && fadeWait.Elapsed < TimeSpan.FromSeconds(5))
+            {
+                await Task.Delay(100);
+                // Let the actual background-priority fade timer run even while
+                // a busy renderer keeps scheduling higher-priority work.
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => { }, Avalonia.Threading.DispatcherPriority.Background);
+            }
+            Check(session.Document.FadingMarks.Count == 0, $"Fade timer did not remove the stroke: opacity={session.Document.FadingMarks.FirstOrDefault()?.FadeOpacity(Stopwatch.GetTimestamp())}.");
             session.SetFading(0);
             session.SelectTool(InkTool.Cursor);
         }
