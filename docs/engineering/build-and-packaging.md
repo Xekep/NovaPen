@@ -2,12 +2,20 @@
 
 ## Build requirements
 
-- .NET SDK `11.0.100-preview.7.26381.103` or a compatible .NET 11 SDK;
+- .NET SDK `11.0.100` or a compatible .NET 11 SDK;
 - Windows Native AOT: Visual Studio Build Tools with **Desktop development with C++**;
 - Linux Native AOT: `clang` and `zlib1g-dev`;
 - macOS Native AOT: Xcode command-line toolchain.
 
-The repository contains `global.json` pinned to the .NET 11 preview used during development.
+The repository contains `global.json` pinned to stable SDK `11.0.100`, with
+prerelease SDKs disabled. Desktop and server target `net11.0`; recognition
+libraries and their probes retain `net10.0` compatibility. The server directory
+pins the same stable SDK for standalone builds. CI also provisions .NET 10 for
+these probes and the pinned historical publication reference; those controls
+are not migrated or rebaselined with the application.
+The desktop project sets `UseOptimizedPublish=false` so .NET11 Native AOT runs
+the full Build sequence and includes compiled Avalonia XAML resources. See
+[Avalonia issue22465](https://github.com/AvaloniaUI/Avalonia/issues/22465).
 
 ## Build
 
@@ -17,6 +25,22 @@ Normal verification build:
 dotnet restore
 dotnet build -c Release -p:PublishAot=false -p:SelfContained=false
 ```
+
+If solution projects contend for a shared intermediate DLL, use `-m:1` to
+serialize the build. Local stable-SDK validation on 16 November 2026 passed
+with this option (zero warnings/errors), along with server publication,
+34 headless mask checks and the text/math/raw-content probes on both runtime
+10 and explicitly selected runtime `11.0.0`.
+
+Windows x64 Native AOT publication also passed. Its isolated smoke test still
+exits 1 at `Desktop pointer resize handle did not transform the stroke`, the
+previously recorded UI failure. The two existing Avalonia DirectComposition
+non-blittable Boolean diagnostics remain. Server invitation tests passed;
+four JavaScript landing-page tests fail on unchanged page/test files
+(`localStorage` assertion and missing `document.querySelector` in the mock).
+Docker builds, PostgreSQL integration and Linux/macOS execution were not run
+locally for this migration. Logs and the native build are under
+`.artifacts/net11-stable-*`.
 
 ### Windows x64 Native AOT
 

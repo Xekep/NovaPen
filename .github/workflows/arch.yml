@@ -56,7 +56,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         if: inputs.publish-artifact == '' && inputs.release-tag == ''
         with:
-          dotnet-version: 11.0.100-preview.7.26381.103
+          dotnet-version: 11.0.100
       - name: Build the Ubuntu 22.04 Native AOT payload
         if: inputs.publish-artifact == '' && inputs.release-tag == ''
         run: |

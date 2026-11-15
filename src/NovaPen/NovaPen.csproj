@@ -11,6 +11,10 @@
 
     <!-- Native AOT is the release/deployment model for this app. -->
     <PublishAot>true</PublishAot>
+    <!-- .NET 11 optimized publish prepares resources before Avalonia adds its
+         XAML resource. Keep full Build ordering until AvaloniaUI/Avalonia#22465
+         is resolved; otherwise Native AOT starts without compiled App.axaml. -->
+    <UseOptimizedPublish>false</UseOptimizedPublish>
     <IsAotCompatible>true</IsAotCompatible>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>full</TrimMode>

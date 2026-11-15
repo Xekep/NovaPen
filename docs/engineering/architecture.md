@@ -15,7 +15,7 @@ flowchart LR
     Raw --> Math
     Math --> Text
     App -->|общие исходники| Shared["NovaPen.Shared · DTO / validation / wire"]
-    Server["NovaPen.Server · ASP.NET Core · net10.0"] -->|общие исходники| Shared
+    Server["NovaPen.Server · ASP.NET Core · net11.0"] -->|общие исходники| Shared
     App <-->|HTTP + WebSocket: только общая доска| Server
     Server -->|Npgsql| DB[(PostgreSQL)]
     Solver -->|отдельный процесс| Giac["Giac CLI · native C++"]
